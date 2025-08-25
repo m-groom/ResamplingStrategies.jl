@@ -327,10 +327,10 @@ end
         train_idx, test_idx = pairs[1]
         
         # With only one sample, the implementation falls back to MLJBase.partition
-        # since empty test set triggers fallback
-        @test length(train_idx) + length(test_idx) == 1
-        @test !isempty(train_idx)  # Should have at least some training data
-        @test isempty(intersect(train_idx, test_idx))  # No overlap
+        # since empty test set triggers fallback. MLJBase.partition duplicates single samples.
+        @test length(train_idx) == 1
+        @test length(test_idx) == 1
+        @test train_idx == [1] && test_idx == [1]  # MLJBase.partition duplicates single sample
     end
     
     @testset "two samples same class" begin
@@ -367,8 +367,8 @@ end
         holdout = StratifiedHoldout(fraction_train=0.7, rng=123)
         
         # This should trigger a warning and use random split
-        @test_logs (:warn, r"StratifiedHoldout requires target variable") begin
-            splits = MLJBase.train_test_pairs(holdout, rows)
+        splits = @test_logs (:warn, r"StratifiedHoldout requires target variable") begin
+            MLJBase.train_test_pairs(holdout, rows)
         end
         
         train_idx, test_idx = splits[1]
