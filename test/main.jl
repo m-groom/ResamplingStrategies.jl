@@ -64,7 +64,7 @@ function proportions(y)
 end
 
 # Helper function to check regression stratification (quantile-based)
-function check_regression_stratification(y_train, y_test, original_y; n_bins=5)
+function check_regression_stratification(y_train, y_test, original_y)
     # Remove missing values for quantile calculation
     y_train_clean = collect(skipmissing(y_train))
     y_test_clean = collect(skipmissing(y_test))
@@ -236,7 +236,7 @@ end
         rows = 1:length(y)
         holdout = StratifiedHoldout(fraction_train=0.75, rng=123)
 
-        pairs = MLJBase.train_test_pairs(holdout, rows, y, n_bins=5)
+        pairs = MLJBase.train_test_pairs(holdout, rows, y)
         @test length(pairs) == 1
 
         train_idx, test_idx = pairs[1]
@@ -301,18 +301,18 @@ end
     @testset "different n_bins" begin
         X, y = generate_regression_data(100)
         rows = 1:length(y)
-        holdout = StratifiedHoldout(fraction_train=0.7, rng=123)
 
         # Test with different number of bins
         for n_bins in [3, 5, 10]
-            pairs = MLJBase.train_test_pairs(holdout, rows, y, n_bins=n_bins)
+            holdout = StratifiedHoldout(fraction_train=0.7, n_bins=n_bins, rng=123)
+            pairs = MLJBase.train_test_pairs(holdout, rows, y)
             train_idx, test_idx = pairs[1]
 
             @test length(train_idx) + length(test_idx) == length(rows)
             @test isempty(intersect(train_idx, test_idx))
 
             y_train, y_test = y[train_idx], y[test_idx]
-            @test check_regression_stratification(y_train, y_test, y, n_bins=n_bins)
+            @test check_regression_stratification(y_train, y_test, y)
         end
     end
 end

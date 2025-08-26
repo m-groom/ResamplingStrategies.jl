@@ -19,32 +19,33 @@ evaluate(DecisionTreeClassifier(), X, y, resampling=holdout, measure=accuracy)
 struct StratifiedHoldout <: MLJBase.ResamplingStrategy
     fraction_train::Float64
     shuffle::Bool
+    n_bins::Int
     rng::AbstractRNG
 
-    function StratifiedHoldout(fraction_train::Float64, shuffle::Bool, rng::AbstractRNG)
+    function StratifiedHoldout(fraction_train::Float64, shuffle::Bool, n_bins::Int, rng::AbstractRNG)
         0 < fraction_train < 1 ||
             error("`fraction_train` must be between 0 and 1.")
-        return new(fraction_train, shuffle, rng)
+        return new(fraction_train, shuffle, n_bins, rng)
     end
 end
 
 # Keyword constructor with smart defaults
-function StratifiedHoldout(; fraction_train::Float64=0.7, shuffle::Bool=false, rng=Random.default_rng())
+function StratifiedHoldout(; fraction_train::Float64=0.7, shuffle::Bool=false, n_bins::Int=5, rng=Random.default_rng())
     if rng isa Integer
         rng = MersenneTwister(rng)
     end
-    return StratifiedHoldout(fraction_train, shuffle, rng)
+    return StratifiedHoldout(fraction_train, shuffle, n_bins, rng)
 end
 
 # Main implementation - requires target variable y for stratification
-function MLJBase.train_test_pairs(strategy::StratifiedHoldout, rows, y; kwargs...)
+function MLJBase.train_test_pairs(strategy::StratifiedHoldout, rows, y)
     # Determine task type from the scitype of the full target vector
     is_finite = scitype(y) <: AbstractVector{<:Union{Missing,Finite}}
 
     if is_finite
         return stratified_holdout_classification(strategy, rows, y)
     else
-        return stratified_holdout_regression(strategy, rows, y; kwargs...)
+        return stratified_holdout_regression(strategy, rows, y)
     end
 end
 
@@ -97,7 +98,7 @@ function stratified_holdout_classification(strategy::StratifiedHoldout, rows, y)
 end
 
 # Regression: Use quantile-based stratification
-function stratified_holdout_regression(strategy::StratifiedHoldout, rows, y; n_bins::Int=5)
+function stratified_holdout_regression(strategy::StratifiedHoldout, rows, y)
     rows_working = strategy.shuffle ?
         rows[randperm(strategy.rng, length(rows))] : collect(rows)
 
@@ -107,7 +108,7 @@ function stratified_holdout_regression(strategy::StratifiedHoldout, rows, y; n_b
     nonmissing_mask = .!ismissing.(y_subset)
     y_nonmissing = collect(skipmissing(y_subset))
     n_samples = length(y_nonmissing)
-    n_bins = min(n_bins, n_samples ÷ 2)
+    n_bins = min(strategy.n_bins, n_samples ÷ 2)
     quantiles = range(0, 1, length=n_bins+1)
     boundaries = [quantile(y_nonmissing, q) for q in quantiles]
 
