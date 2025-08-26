@@ -7,27 +7,32 @@ using ScientificTypesBase: scitype, Finite
 using ResamplingStrategies
 
 # Helper functions for generating test data
-function generate_balanced_classification_data(n_samples::Int=100, n_classes::Int=3)
+function generate_balanced_classification_data(n_samples::Int = 100, n_classes::Int = 3)
     n_per_class = n_samples ÷ n_classes
-    y = repeat(1:n_classes, inner=n_per_class)
+    y = repeat(1:n_classes, inner = n_per_class)
     X = randn(length(y), 2)  # Simple 2D features
     return X, categorical(y)
 end
 
-function generate_imbalanced_classification_data(n_samples::Int=100)
+function generate_imbalanced_classification_data(n_samples::Int = 100)
     # Create imbalanced dataset: 70% class 1, 20% class 2, 10% class 3
-    n1, n2, n3 = round(Int, 0.7*n_samples), round(Int, 0.2*n_samples), round(Int, 0.1*n_samples)
+    n1, n2, n3 =
+        round(Int, 0.7*n_samples), round(Int, 0.2*n_samples), round(Int, 0.1*n_samples)
     y = vcat(fill(1, n1), fill(2, n2), fill(3, n3))
     X = randn(length(y), 2)
     return X, categorical(y)
 end
 
-function generate_regression_data(n_samples::Int=100; add_missing::Bool=false, constant::Bool=false)
+function generate_regression_data(
+    n_samples::Int = 100;
+    add_missing::Bool = false,
+    constant::Bool = false,
+)
     if add_missing
         if constant
-            y = Vector{Union{Float64, Missing}}(fill(5.0, n_samples))
+            y = Vector{Union{Float64,Missing}}(fill(5.0, n_samples))
         else
-            y = Vector{Union{Float64, Missing}}(randn(n_samples) * 10 .+ 50)  # Normal distribution with mean=50, std=10
+            y = Vector{Union{Float64,Missing}}(randn(n_samples) * 10 .+ 50)  # Normal distribution with mean=50, std=10
         end
         # Add some missing values (10% of data)
         missing_indices = rand(1:n_samples, max(1, n_samples ÷ 10))
@@ -45,14 +50,20 @@ function generate_regression_data(n_samples::Int=100; add_missing::Bool=false, c
 end
 
 # Helper function to check stratification quality for classification
-function check_classification_stratification(y_train, y_test, original_y; tolerance=0.1)
+function check_classification_stratification(y_train, y_test, original_y; tolerance = 0.1)
     original_props = proportions(original_y)
     train_props = proportions(y_train)
     test_props = proportions(y_test)
 
     # Check if proportions are maintained within tolerance
-    train_ok = all(abs(train_props[k] - original_props[k]) <= tolerance for k in keys(original_props) if haskey(train_props, k))
-    test_ok = all(abs(test_props[k] - original_props[k]) <= tolerance for k in keys(original_props) if haskey(test_props, k))
+    train_ok = all(
+        abs(train_props[k] - original_props[k]) <= tolerance for
+        k in keys(original_props) if haskey(train_props, k)
+    )
+    test_ok = all(
+        abs(test_props[k] - original_props[k]) <= tolerance for
+        k in keys(original_props) if haskey(test_props, k)
+    )
 
     return train_ok && test_ok
 end
@@ -64,7 +75,7 @@ function proportions(y)
 end
 
 # Helper function to check regression stratification (quantile-based)
-function check_regression_stratification(y_train, y_test, original_y; n_bins=5)
+function check_regression_stratification(y_train, y_test, original_y; n_bins = 5)
     # Remove missing values for quantile calculation
     y_train_clean = collect(skipmissing(y_train))
     y_test_clean = collect(skipmissing(y_test))
@@ -87,8 +98,14 @@ function check_regression_stratification(y_train, y_test, original_y; n_bins=5)
 
     # Use generous tolerance - stratification is imperfect especially with small samples
     tolerance = max(1.0, 0.5 * std(original_clean))  # At least 1.0 or 50% of std
-    train_ok = all(abs(train_quantiles[i] - original_quantiles[i]) <= tolerance for i in 1:length(quantiles))
-    test_ok = all(abs(test_quantiles[i] - original_quantiles[i]) <= tolerance for i in 1:length(quantiles))
+    train_ok = all(
+        abs(train_quantiles[i] - original_quantiles[i]) <= tolerance for
+        i = 1:length(quantiles)
+    )
+    test_ok = all(
+        abs(test_quantiles[i] - original_quantiles[i]) <= tolerance for
+        i = 1:length(quantiles)
+    )
 
     return train_ok && test_ok
 end
@@ -102,28 +119,28 @@ end
         @test holdout1.rng isa AbstractRNG
 
         # Custom parameters
-        holdout2 = StratifiedHoldout(fraction_train=0.8, shuffle=true, rng=123)
+        holdout2 = StratifiedHoldout(fraction_train = 0.8, shuffle = true, rng = 123)
         @test holdout2.fraction_train == 0.8
         @test holdout2.shuffle == true
         @test holdout2.rng isa MersenneTwister
 
         # RNG as AbstractRNG
         rng = MersenneTwister(42)
-        holdout3 = StratifiedHoldout(fraction_train=0.6, rng=rng)
+        holdout3 = StratifiedHoldout(fraction_train = 0.6, rng = rng)
         @test holdout3.fraction_train == 0.6
         @test holdout3.rng === rng
     end
 
     @testset "invalid parameters" begin
         # fraction_train out of bounds
-        @test_throws ErrorException StratifiedHoldout(fraction_train=0.0)
-        @test_throws ErrorException StratifiedHoldout(fraction_train=1.0)
-        @test_throws ErrorException StratifiedHoldout(fraction_train=-0.1)
-        @test_throws ErrorException StratifiedHoldout(fraction_train=1.5)
+        @test_throws ErrorException StratifiedHoldout(fraction_train = 0.0)
+        @test_throws ErrorException StratifiedHoldout(fraction_train = 1.0)
+        @test_throws ErrorException StratifiedHoldout(fraction_train = -0.1)
+        @test_throws ErrorException StratifiedHoldout(fraction_train = 1.5)
 
         # Test boundary values that should be valid (very close to boundaries)
-        @test_nowarn StratifiedHoldout(fraction_train=0.001)
-        @test_nowarn StratifiedHoldout(fraction_train=0.999)
+        @test_nowarn StratifiedHoldout(fraction_train = 0.001)
+        @test_nowarn StratifiedHoldout(fraction_train = 0.999)
     end
 
     @testset "type stability" begin
@@ -140,7 +157,7 @@ end
     @testset "balanced classification" begin
         X, y = generate_balanced_classification_data(150, 3)
         rows = 1:length(y)
-        holdout = StratifiedHoldout(fraction_train=0.7, rng=123)
+        holdout = StratifiedHoldout(fraction_train = 0.7, rng = 123)
 
         pairs = MLJBase.train_test_pairs(holdout, rows, y)
         @test length(pairs) == 1
@@ -154,7 +171,7 @@ end
 
         # Test stratification quality
         y_train, y_test = y[train_idx], y[test_idx]
-        @test check_classification_stratification(y_train, y_test, y, tolerance=0.15)
+        @test check_classification_stratification(y_train, y_test, y, tolerance = 0.15)
 
         # Verify all classes are represented in both splits
         train_classes = Set(y_train)
@@ -167,7 +184,7 @@ end
     @testset "imbalanced classification" begin
         X, y = generate_imbalanced_classification_data(200)
         rows = 1:length(y)
-        holdout = StratifiedHoldout(fraction_train=0.8, rng=456)
+        holdout = StratifiedHoldout(fraction_train = 0.8, rng = 456)
 
         pairs = MLJBase.train_test_pairs(holdout, rows, y)
         train_idx, test_idx = pairs[1]
@@ -175,7 +192,7 @@ end
         y_train, y_test = y[train_idx], y[test_idx]
 
         # Check that imbalanced proportions are maintained
-        @test check_classification_stratification(y_train, y_test, y, tolerance=0.15)
+        @test check_classification_stratification(y_train, y_test, y, tolerance = 0.15)
 
         # Verify minority class is represented
         original_counts = countmap(y)
@@ -192,7 +209,7 @@ end
     @testset "single class edge case" begin
         y = fill(categorical([1])[1], 50)  # All same class
         rows = 1:length(y)
-        holdout = StratifiedHoldout(fraction_train=0.7, rng=789)
+        holdout = StratifiedHoldout(fraction_train = 0.7, rng = 789)
 
         pairs = MLJBase.train_test_pairs(holdout, rows, y)
         train_idx, test_idx = pairs[1]
@@ -212,12 +229,12 @@ end
         rows = 1:length(y)
 
         # Test without shuffling
-        holdout1 = StratifiedHoldout(fraction_train=0.7, shuffle=false, rng=123)
+        holdout1 = StratifiedHoldout(fraction_train = 0.7, shuffle = false, rng = 123)
         pairs1 = MLJBase.train_test_pairs(holdout1, rows, y)
         train_idx1, test_idx1 = pairs1[1]
 
         # Test with shuffling
-        holdout2 = StratifiedHoldout(fraction_train=0.7, shuffle=true, rng=123)
+        holdout2 = StratifiedHoldout(fraction_train = 0.7, shuffle = true, rng = 123)
         pairs2 = MLJBase.train_test_pairs(holdout2, rows, y)
         train_idx2, test_idx2 = pairs2[1]
 
@@ -234,9 +251,9 @@ end
     @testset "normal distribution" begin
         X, y = generate_regression_data(200)
         rows = 1:length(y)
-        holdout = StratifiedHoldout(fraction_train=0.75, rng=123)
+        holdout = StratifiedHoldout(fraction_train = 0.75, rng = 123)
 
-        pairs = MLJBase.train_test_pairs(holdout, rows, y, n_bins=5)
+        pairs = MLJBase.train_test_pairs(holdout, rows, y, n_bins = 5)
         @test length(pairs) == 1
 
         train_idx, test_idx = pairs[1]
@@ -256,9 +273,9 @@ end
     end
 
     @testset "with missing values" begin
-        X, y = generate_regression_data(150, add_missing=true)
+        X, y = generate_regression_data(150, add_missing = true)
         rows = 1:length(y)
-        holdout = StratifiedHoldout(fraction_train=0.7, rng=456)
+        holdout = StratifiedHoldout(fraction_train = 0.7, rng = 456)
 
         pairs = MLJBase.train_test_pairs(holdout, rows, y)
         train_idx, test_idx = pairs[1]
@@ -280,9 +297,9 @@ end
     end
 
     @testset "constant values" begin
-        X, y = generate_regression_data(80, constant=true)
+        X, y = generate_regression_data(80, constant = true)
         rows = 1:length(y)
-        holdout = StratifiedHoldout(fraction_train=0.6, rng=789)
+        holdout = StratifiedHoldout(fraction_train = 0.6, rng = 789)
 
         pairs = MLJBase.train_test_pairs(holdout, rows, y)
         train_idx, test_idx = pairs[1]
@@ -301,18 +318,18 @@ end
     @testset "different n_bins" begin
         X, y = generate_regression_data(100)
         rows = 1:length(y)
-        holdout = StratifiedHoldout(fraction_train=0.7, rng=123)
+        holdout = StratifiedHoldout(fraction_train = 0.7, rng = 123)
 
         # Test with different number of bins
         for n_bins in [3, 5, 10]
-            pairs = MLJBase.train_test_pairs(holdout, rows, y, n_bins=n_bins)
+            pairs = MLJBase.train_test_pairs(holdout, rows, y, n_bins = n_bins)
             train_idx, test_idx = pairs[1]
 
             @test length(train_idx) + length(test_idx) == length(rows)
             @test isempty(intersect(train_idx, test_idx))
 
             y_train, y_test = y[train_idx], y[test_idx]
-            @test check_regression_stratification(y_train, y_test, y, n_bins=n_bins)
+            @test check_regression_stratification(y_train, y_test, y, n_bins = n_bins)
         end
     end
 end
@@ -321,7 +338,7 @@ end
     @testset "single sample" begin
         y = categorical([1])
         rows = [1]
-        holdout = StratifiedHoldout(fraction_train=0.7, rng=123)
+        holdout = StratifiedHoldout(fraction_train = 0.7, rng = 123)
 
         pairs = MLJBase.train_test_pairs(holdout, rows, y)
         train_idx, test_idx = pairs[1]
@@ -336,7 +353,7 @@ end
     @testset "two samples same class" begin
         y = categorical([1, 1])
         rows = [1, 2]
-        holdout = StratifiedHoldout(fraction_train=0.7, rng=123)
+        holdout = StratifiedHoldout(fraction_train = 0.7, rng = 123)
 
         pairs = MLJBase.train_test_pairs(holdout, rows, y)
         train_idx, test_idx = pairs[1]
@@ -350,7 +367,7 @@ end
     @testset "two samples different classes" begin
         y = categorical([1, 2])
         rows = [1, 2]
-        holdout = StratifiedHoldout(fraction_train=0.7, rng=123)
+        holdout = StratifiedHoldout(fraction_train = 0.7, rng = 123)
 
         pairs = MLJBase.train_test_pairs(holdout, rows, y)
         train_idx, test_idx = pairs[1]
@@ -364,7 +381,7 @@ end
     @testset "empty fallback behavior" begin
         # Test fallback when no target is provided
         rows = 1:10
-        holdout = StratifiedHoldout(fraction_train=0.7, rng=123)
+        holdout = StratifiedHoldout(fraction_train = 0.7, rng = 123)
 
         # This should trigger a warning and use random split
         splits = @test_logs (:warn, r"StratifiedHoldout requires target variable") begin
@@ -383,7 +400,7 @@ end
         for n in [10, 50, 100, 200]
             X, y = generate_balanced_classification_data(n, 3)
             rows = 1:length(y)
-            holdout = StratifiedHoldout(fraction_train=0.7, rng=123)
+            holdout = StratifiedHoldout(fraction_train = 0.7, rng = 123)
 
             pairs = MLJBase.train_test_pairs(holdout, rows, y)
             train_idx, test_idx = pairs[1]
@@ -396,10 +413,11 @@ end
 
     @testset "no overlap property" begin
         # Test that train and test sets never overlap
-        for _ in 1:20  # Multiple random tests
+        for _ = 1:20  # Multiple random tests
             X, y = generate_balanced_classification_data(100, 4)
             rows = 1:length(y)
-            holdout = StratifiedHoldout(fraction_train=rand() * 0.8 + 0.1, rng=rand(1:1000))
+            holdout =
+                StratifiedHoldout(fraction_train = rand() * 0.8 + 0.1, rng = rand(1:1000))
 
             pairs = MLJBase.train_test_pairs(holdout, rows, y)
             train_idx, test_idx = pairs[1]
@@ -412,7 +430,7 @@ end
         # Test that class proportions are approximately maintained
         X, y = generate_imbalanced_classification_data(500)
         rows = 1:length(y)
-        holdout = StratifiedHoldout(fraction_train=0.75, rng=123)
+        holdout = StratifiedHoldout(fraction_train = 0.75, rng = 123)
 
         pairs = MLJBase.train_test_pairs(holdout, rows, y)
         train_idx, test_idx = pairs[1]
@@ -439,7 +457,7 @@ end
         rows = 1:length(y)
 
         for fraction in [0.1, 0.3, 0.5, 0.7, 0.9]
-            holdout = StratifiedHoldout(fraction_train=fraction, rng=123)
+            holdout = StratifiedHoldout(fraction_train = fraction, rng = 123)
             pairs = MLJBase.train_test_pairs(holdout, rows, y)
             train_idx, test_idx = pairs[1]
 
@@ -455,8 +473,8 @@ end
         X, y = generate_balanced_classification_data(100, 3)
         rows = 1:length(y)
 
-        holdout1 = StratifiedHoldout(fraction_train=0.7, shuffle=true, rng=42)
-        holdout2 = StratifiedHoldout(fraction_train=0.7, shuffle=true, rng=42)
+        holdout1 = StratifiedHoldout(fraction_train = 0.7, shuffle = true, rng = 42)
+        holdout2 = StratifiedHoldout(fraction_train = 0.7, shuffle = true, rng = 42)
 
         pairs1 = MLJBase.train_test_pairs(holdout1, rows, y)
         pairs2 = MLJBase.train_test_pairs(holdout2, rows, y)
@@ -472,8 +490,8 @@ end
         X, y = generate_balanced_classification_data(100, 3)
         rows = 1:length(y)
 
-        holdout1 = StratifiedHoldout(fraction_train=0.7, shuffle=true, rng=42)
-        holdout2 = StratifiedHoldout(fraction_train=0.7, shuffle=true, rng=123)
+        holdout1 = StratifiedHoldout(fraction_train = 0.7, shuffle = true, rng = 42)
+        holdout2 = StratifiedHoldout(fraction_train = 0.7, shuffle = true, rng = 123)
 
         pairs1 = MLJBase.train_test_pairs(holdout1, rows, y)
         pairs2 = MLJBase.train_test_pairs(holdout2, rows, y)
@@ -489,8 +507,8 @@ end
         X, y = generate_balanced_classification_data(100, 3)
         rows = 1:length(y)
 
-        holdout1 = StratifiedHoldout(fraction_train=0.7, shuffle=false, rng=42)
-        holdout2 = StratifiedHoldout(fraction_train=0.7, shuffle=false, rng=123)
+        holdout1 = StratifiedHoldout(fraction_train = 0.7, shuffle = false, rng = 42)
+        holdout2 = StratifiedHoldout(fraction_train = 0.7, shuffle = false, rng = 123)
 
         pairs1 = MLJBase.train_test_pairs(holdout1, rows, y)
         pairs2 = MLJBase.train_test_pairs(holdout2, rows, y)
@@ -524,7 +542,7 @@ end
     end
 
     @testset "compatibility with different target types" begin
-        holdout = StratifiedHoldout(fraction_train=0.6, rng=123)
+        holdout = StratifiedHoldout(fraction_train = 0.6, rng = 123)
         rows = 1:100
 
         # Test with different target types that should trigger classification
@@ -538,7 +556,7 @@ end
         @test length(pairs_cont) == 1
 
         # Test with mixed target (some missing)
-        y_missing = Vector{Union{Missing, Float64}}(randn(100))
+        y_missing = Vector{Union{Missing,Float64}}(randn(100))
         y_missing[1:10] .= missing
         pairs_missing = MLJBase.train_test_pairs(holdout, rows, y_missing)
         @test length(pairs_missing) == 1
@@ -549,8 +567,8 @@ end
         rows = 1:length(y)
 
         # Multiple calls with same seed should give same result
-        holdout1 = StratifiedHoldout(fraction_train=0.7, rng=456)
-        holdout2 = StratifiedHoldout(fraction_train=0.7, rng=456)
+        holdout1 = StratifiedHoldout(fraction_train = 0.7, rng = 456)
+        holdout2 = StratifiedHoldout(fraction_train = 0.7, rng = 456)
 
         pairs1 = MLJBase.train_test_pairs(holdout1, rows, y)
         pairs2 = MLJBase.train_test_pairs(holdout2, rows, y)
@@ -558,7 +576,7 @@ end
         @test pairs1 == pairs2  # Same seed should give same result
 
         # But different seeds should give different results (with high probability)
-        holdout3 = StratifiedHoldout(fraction_train=0.7, rng=789)
+        holdout3 = StratifiedHoldout(fraction_train = 0.7, rng = 789)
         pairs3 = MLJBase.train_test_pairs(holdout3, rows, y)
         @test pairs1 != pairs3  # Different seeds should give different results
     end
@@ -567,7 +585,7 @@ end
         # Test that stratification doesn't take too long
         X, y = generate_balanced_classification_data(1000, 5)
         rows = 1:length(y)
-        holdout = StratifiedHoldout(fraction_train=0.8, rng=123)
+        holdout = StratifiedHoldout(fraction_train = 0.8, rng = 123)
 
         # Should complete quickly
         @elapsed time = @elapsed MLJBase.train_test_pairs(holdout, rows, y)
