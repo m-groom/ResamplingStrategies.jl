@@ -9,25 +9,29 @@ using ResamplingStrategies
 # Helper functions for generating test data
 function generate_balanced_classification_data(n_samples::Int=100, n_classes::Int=3)
     n_per_class = n_samples ÷ n_classes
-    y = repeat(1:n_classes, inner=n_per_class)
+    y = repeat(1:n_classes; inner=n_per_class)
     X = randn(length(y), 2)  # Simple 2D features
     return X, categorical(y)
 end
 
 function generate_imbalanced_classification_data(n_samples::Int=100)
     # Create imbalanced dataset: 70% class 1, 20% class 2, 10% class 3
-    n1, n2, n3 = round(Int, 0.7*n_samples), round(Int, 0.2*n_samples), round(Int, 0.1*n_samples)
+    n1, n2, n3 = round(Int, 0.7*n_samples),
+    round(Int, 0.2*n_samples),
+    round(Int, 0.1*n_samples)
     y = vcat(fill(1, n1), fill(2, n2), fill(3, n3))
     X = randn(length(y), 2)
     return X, categorical(y)
 end
 
-function generate_regression_data(n_samples::Int=100; add_missing::Bool=false, constant::Bool=false)
+function generate_regression_data(
+    n_samples::Int=100; add_missing::Bool=false, constant::Bool=false
+)
     if add_missing
         if constant
-            y = Vector{Union{Float64, Missing}}(fill(5.0, n_samples))
+            y = Vector{Union{Float64,Missing}}(fill(5.0, n_samples))
         else
-            y = Vector{Union{Float64, Missing}}(randn(n_samples) * 10 .+ 50)  # Normal distribution with mean=50, std=10
+            y = Vector{Union{Float64,Missing}}(randn(n_samples) * 10 .+ 50)  # Normal distribution with mean=50, std=10
         end
         # Add some missing values (10% of data)
         missing_indices = rand(1:n_samples, max(1, n_samples ÷ 10))
@@ -51,8 +55,14 @@ function check_classification_stratification(y_train, y_test, original_y; tolera
     test_props = proportions(y_test)
 
     # Check if proportions are maintained within tolerance
-    train_ok = all(abs(train_props[k] - original_props[k]) <= tolerance for k in keys(original_props) if haskey(train_props, k))
-    test_ok = all(abs(test_props[k] - original_props[k]) <= tolerance for k in keys(original_props) if haskey(test_props, k))
+    train_ok = all(
+        abs(train_props[k] - original_props[k]) <= tolerance for
+        k in keys(original_props) if haskey(train_props, k)
+    )
+    test_ok = all(
+        abs(test_props[k] - original_props[k]) <= tolerance for
+        k in keys(original_props) if haskey(test_props, k)
+    )
 
     return train_ok && test_ok
 end
@@ -87,8 +97,14 @@ function check_regression_stratification(y_train, y_test, original_y)
 
     # Use generous tolerance - stratification is imperfect especially with small samples
     tolerance = max(1.0, 0.5 * std(original_clean))  # At least 1.0 or 50% of std
-    train_ok = all(abs(train_quantiles[i] - original_quantiles[i]) <= tolerance for i in 1:length(quantiles))
-    test_ok = all(abs(test_quantiles[i] - original_quantiles[i]) <= tolerance for i in 1:length(quantiles))
+    train_ok = all(
+        abs(train_quantiles[i] - original_quantiles[i]) <= tolerance for
+        i in 1:length(quantiles)
+    )
+    test_ok = all(
+        abs(test_quantiles[i] - original_quantiles[i]) <= tolerance for
+        i in 1:length(quantiles)
+    )
 
     return train_ok && test_ok
 end
@@ -538,7 +554,7 @@ end
         @test length(pairs_cont) == 1
 
         # Test with mixed target (some missing)
-        y_missing = Vector{Union{Missing, Float64}}(randn(100))
+        y_missing = Vector{Union{Missing,Float64}}(randn(100))
         y_missing[1:10] .= missing
         pairs_missing = MLJBase.train_test_pairs(holdout, rows, y_missing)
         @test length(pairs_missing) == 1
