@@ -1,50 +1,89 @@
 """
-    StratifiedHoldout(; fraction_train=0.7, shuffle=nothing, rng=nothing)
+    StratifiedHoldout(; fraction_train=0.8, shuffle=false, rng=Random.default_rng(), weights=nothing)
 
 Stratified holdout resampling strategy that maintains target distribution
-in both training and test sets.
+in both training and test sets. Optionally supports weighted sampling
+where training instances are selected with probability proportional to their weights.
 
 # Parameters
-- `fraction_train::Float64=0.7`: Fraction of data for training (0 < fraction_train < 1)
+- `fraction_train::Float64=0.8`: Fraction of data for training (0 < fraction_train < 1)
 - `shuffle::Bool=false`: Whether to shuffle before stratification
+- `n_bins::Int=5`: Number of quantile bins for regression stratification
 - `rng::Union{Int,AbstractRNG}=Random.default_rng()`: Random number generator or seed
+- `weights::Union{Nothing, AbstractVector{<:Real}}=nothing`: Per-instance sampling weights.
+  When provided, training instances within each stratum are sampled with probability proportional
+  to their weights. All weights must be non-negative with at least one positive value.
+  `nothing` (default) gives uniform sampling.
 
 # Example
 ```julia
 X, y = @load_iris
 holdout = StratifiedHoldout(fraction_train=0.8, shuffle=true, rng=123)
 evaluate(DecisionTreeClassifier(), X, y, resampling=holdout, measure=accuracy)
+
+# With weighted sampling
+w = rand(150)
+holdout_w = StratifiedHoldout(fraction_train=0.8, rng=123, weights=w)
+evaluate(DecisionTreeClassifier(), X, y, resampling=holdout_w, measure=accuracy)
 ```
 """
+
+# Sample `n` elements from `indices` without replacement, optionally weighted.
+# Falls back to uniform sampling when weights are all zero or there are fewer
+# positive-weight elements than `n`.
+function _weighted_sample(rng, indices, n, weights)
+    if weights === nothing
+        return sample(rng, indices, n; replace=false)
+    end
+    w_local = weights[indices]
+    n_positive = count(>(0), w_local)
+    if n_positive == 0 || n_positive < n
+        return sample(rng, indices, n; replace=false)
+    end
+    return sample(rng, indices, Weights(w_local), n; replace=false)
+end
+
 struct StratifiedHoldout <: MLJBase.ResamplingStrategy
     fraction_train::Float64
     shuffle::Bool
     n_bins::Int
     rng::AbstractRNG
+    weights::Union{Nothing, AbstractVector{<:Real}}
 
     function StratifiedHoldout(
-        fraction_train::Float64, shuffle::Bool, n_bins::Int, rng::AbstractRNG
+        fraction_train::Float64, shuffle::Bool, n_bins::Int, rng::AbstractRNG,
+        weights::Union{Nothing, AbstractVector{<:Real}},
     )
         0 < fraction_train < 1 || error("`fraction_train` must be between 0 and 1.")
-        return new(fraction_train, shuffle, n_bins, rng)
+        if weights !== nothing
+            all(w -> w >= 0, weights) || error("All weights must be non-negative.")
+            sum(weights) > 0 || error("At least one weight must be positive.")
+        end
+        return new(fraction_train, shuffle, n_bins, rng, weights)
     end
 end
 
 # Keyword constructor with smart defaults
 function StratifiedHoldout(;
-    fraction_train::Float64=0.7,
+    fraction_train::Float64=0.8,
     shuffle::Bool=false,
     n_bins::Int=5,
     rng=Random.default_rng(),
+    weights::Union{Nothing, AbstractVector{<:Real}}=nothing,
 )
     if rng isa Integer
         rng = MersenneTwister(rng)
     end
-    return StratifiedHoldout(fraction_train, shuffle, n_bins, rng)
+    return StratifiedHoldout(fraction_train, shuffle, n_bins, rng, weights)
 end
 
 # Main implementation - requires target variable y for stratification
 function MLJBase.train_test_pairs(strategy::StratifiedHoldout, rows, y)
+    if strategy.weights !== nothing
+        length(strategy.weights) == length(y) ||
+            error("Length of `weights` ($(length(strategy.weights))) must match " *
+                  "length of target `y` ($(length(y))).")
+    end
     # Determine task type from the scitype of the full target vector
     is_finite = scitype(y) <: AbstractVector{<:Union{Missing,Finite}}
 
@@ -62,6 +101,7 @@ function stratified_holdout_classification(strategy::StratifiedHoldout, rows, y)
         strategy.shuffle ? rows[randperm(strategy.rng, length(rows))] : collect(rows)
 
     y_subset = y[rows_working]
+    w_subset = strategy.weights !== nothing ? strategy.weights[rows_working] : nothing
     class_counts = countmap(y_subset)
 
     # Handle edge case of single class
@@ -84,7 +124,7 @@ function stratified_holdout_classification(strategy::StratifiedHoldout, rows, y)
         if count < 2
             append!(train_indices, class_indices)
         else
-            train_class = sample(strategy.rng, class_indices, n_train; replace=false)
+            train_class = _weighted_sample(strategy.rng, class_indices, n_train, w_subset)
             test_class = setdiff(class_indices, train_class)
             append!(train_indices, train_class)
             append!(test_indices, test_class)
@@ -111,6 +151,7 @@ function stratified_holdout_regression(strategy::StratifiedHoldout, rows, y)
         strategy.shuffle ? rows[randperm(strategy.rng, length(rows))] : collect(rows)
 
     y_subset = y[rows_working]
+    w_subset = strategy.weights !== nothing ? strategy.weights[rows_working] : nothing
 
     # Create quantile bins on non-missing values
     nonmissing_mask = .!ismissing.(y_subset)
@@ -155,7 +196,7 @@ function stratified_holdout_regression(strategy::StratifiedHoldout, rows, y)
             n_train = max(1, round(Int, n_bin * strategy.fraction_train))
             n_train = min(n_train, n_bin - 1)
 
-            train_bin = sample(strategy.rng, bin_indices, n_train; replace=false)
+            train_bin = _weighted_sample(strategy.rng, bin_indices, n_train, w_subset)
             test_bin = setdiff(bin_indices, train_bin)
 
             append!(train_indices, train_bin)
@@ -176,7 +217,7 @@ function stratified_holdout_regression(strategy::StratifiedHoldout, rows, y)
                     round(Int, length(missing_indices) * strategy.fraction_train),
                 ),
             )
-            train_miss = sample(strategy.rng, missing_indices, n_train_miss; replace=false)
+            train_miss = _weighted_sample(strategy.rng, missing_indices, n_train_miss, w_subset)
             test_miss = setdiff(missing_indices, train_miss)
             append!(train_indices, train_miss)
             append!(test_indices, test_miss)

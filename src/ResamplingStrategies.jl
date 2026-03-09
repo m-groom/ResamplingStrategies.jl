@@ -3,7 +3,7 @@ module ResamplingStrategies
 using MLJBase
 using Random
 using Statistics
-using StatsBase: countmap, sample
+using StatsBase: countmap, sample, Weights
 using ScientificTypesBase
 
 # Include strategies

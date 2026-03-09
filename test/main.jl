@@ -113,7 +113,7 @@ end
     @testset "valid parameters" begin
         # Default constructor
         holdout1 = StratifiedHoldout()
-        @test holdout1.fraction_train == 0.7
+        @test holdout1.fraction_train == 0.8
         @test holdout1.shuffle == false
         @test holdout1.rng isa AbstractRNG
 
@@ -592,5 +592,143 @@ end
         # Should not allocate excessively
         allocs = @allocated MLJBase.train_test_pairs(holdout, rows, y)
         @test allocs < 10_000_000  # Less than 10MB of allocations
+    end
+end
+
+@testset "Weighted Sampling" begin
+
+    @testset "constructor validation" begin
+        # Default: no weights
+        h = StratifiedHoldout()
+        @test h.weights === nothing
+
+        # Valid weights
+        w = [1.0, 2.0, 3.0]
+        h = StratifiedHoldout(weights=w)
+        @test h.weights === w
+
+        # Integer weights
+        h = StratifiedHoldout(weights=[1, 2, 3])
+        @test h.weights == [1, 2, 3]
+
+        # Zero weights allowed (as long as not all zero)
+        h = StratifiedHoldout(weights=[0.0, 0.0, 1.0])
+        @test h.weights == [0.0, 0.0, 1.0]
+
+        # Negative weights rejected
+        @test_throws ErrorException StratifiedHoldout(weights=[-1.0, 2.0, 3.0])
+
+        # All-zero weights rejected
+        @test_throws ErrorException StratifiedHoldout(weights=[0.0, 0.0, 0.0])
+    end
+
+    @testset "weights length mismatch" begin
+        _, y = generate_balanced_classification_data(100, 3)
+        rows = 1:length(y)
+        w_wrong = ones(10)
+        h = StratifiedHoldout(fraction_train=0.7, rng=42, weights=w_wrong)
+        @test_throws ErrorException MLJBase.train_test_pairs(h, rows, y)
+    end
+
+    @testset "weighted classification: valid splits" begin
+        _, y = generate_balanced_classification_data(150, 3)
+        rows = 1:length(y)
+        w = rand(MersenneTwister(99), length(y))
+
+        h = StratifiedHoldout(fraction_train=0.7, rng=42, weights=w)
+        pairs = MLJBase.train_test_pairs(h, rows, y)
+        train_idx, test_idx = pairs[1]
+
+        # Basic validity
+        @test length(train_idx) + length(test_idx) == length(y)
+        @test isempty(intersect(train_idx, test_idx))
+        @test sort(vcat(train_idx, test_idx)) == collect(1:length(y))
+    end
+
+    @testset "weighted classification: skewed weights bias selection" begin
+        # Create data where weights vary WITHIN each class.
+        # With 300 samples (3 classes × 100), the even-indexed instances within
+        # each class get very high weight, odd-indexed get near-zero weight.
+        _, y = generate_balanced_classification_data(300, 3)
+        rows = 1:length(y)
+
+        w = ones(length(y)) .* 1e-6
+        # Mark even-indexed instances as high-weight
+        high_weight_indices = 2:2:length(y)
+        w[high_weight_indices] .= 1000.0
+
+        # Run multiple trials to check statistical bias
+        n_trials = 50
+        high_in_train_counts = zeros(Int, n_trials)
+        for trial in 1:n_trials
+            h = StratifiedHoldout(fraction_train=0.7, rng=trial, weights=w)
+            pairs = MLJBase.train_test_pairs(h, rows, y)
+            train_idx, _ = pairs[1]
+            high_in_train_counts[trial] = count(i -> i in high_weight_indices, train_idx)
+        end
+        # fraction_train=0.7 selects 210 of 300 for training (70 per class).
+        # There are 150 high-weight instances. Without weighting, we'd expect
+        # ~105 high-weight instances in train (150 * 0.7).
+        # With extreme weighting, nearly all 150 high-weight instances should
+        # be selected first, so we expect close to 150.
+        @test mean(high_in_train_counts) > 130
+    end
+
+    @testset "weighted regression: valid splits" begin
+        _, y = generate_regression_data(200)
+        rows = 1:length(y)
+        w = rand(MersenneTwister(99), length(y))
+
+        h = StratifiedHoldout(fraction_train=0.75, rng=123, weights=w)
+        pairs = MLJBase.train_test_pairs(h, rows, y)
+        train_idx, test_idx = pairs[1]
+
+        @test length(train_idx) + length(test_idx) == length(rows)
+        @test isempty(intersect(train_idx, test_idx))
+    end
+
+    @testset "weighted regression with missing values" begin
+        _, y = generate_regression_data(150; add_missing=true)
+        rows = 1:length(y)
+        w = rand(MersenneTwister(99), length(y))
+
+        h = StratifiedHoldout(fraction_train=0.7, rng=456, weights=w)
+        pairs = MLJBase.train_test_pairs(h, rows, y)
+        train_idx, test_idx = pairs[1]
+
+        @test length(train_idx) + length(test_idx) == length(y)
+        @test isempty(intersect(train_idx, test_idx))
+    end
+
+    @testset "reproducibility with weights" begin
+        _, y = generate_balanced_classification_data(100, 3)
+        rows = 1:length(y)
+        w = rand(MersenneTwister(1), length(y))
+
+        h1 = StratifiedHoldout(fraction_train=0.7, rng=42, weights=w)
+        h2 = StratifiedHoldout(fraction_train=0.7, rng=42, weights=w)
+        @test MLJBase.train_test_pairs(h1, rows, y) == MLJBase.train_test_pairs(h2, rows, y)
+    end
+
+    @testset "uniform weights match unweighted behaviour" begin
+        _, y = generate_balanced_classification_data(100, 3)
+        rows = 1:length(y)
+        w_uniform = ones(length(y))
+
+        # With uniform weights, both paths should produce valid splits
+        h_weighted = StratifiedHoldout(fraction_train=0.7, rng=42, weights=w_uniform)
+        h_unweighted = StratifiedHoldout(fraction_train=0.7, rng=42)
+
+        pairs_w = MLJBase.train_test_pairs(h_weighted, rows, y)
+        pairs_u = MLJBase.train_test_pairs(h_unweighted, rows, y)
+
+        train_w, test_w = pairs_w[1]
+        train_u, test_u = pairs_u[1]
+
+        # Both should be valid splits (may differ due to different sampling algorithms)
+        @test length(train_w) == length(train_u)
+        @test length(test_w) == length(test_u)
+        @test isempty(intersect(train_w, test_w))
+        @test isempty(intersect(train_u, test_u))
     end
 end
