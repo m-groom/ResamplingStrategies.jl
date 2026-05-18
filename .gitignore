@@ -29,3 +29,7 @@ JuliaLocalPreferences.toml
 
 # Ignore VSCode settings
 .vscode/
+
+# Ignore coding agent files
+CLAUDE.md
+.claude/
